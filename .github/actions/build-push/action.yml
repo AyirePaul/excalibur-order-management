@@ -1,0 +1,44 @@
+name: Build and push Docker image to ECR
+description: Authenticates to ECR, builds, and pushes a single service image.
+
+inputs:
+  aws_access_key_id:
+    required: true
+  aws_secret_access_key:
+    required: true
+  aws_region:
+    required: false
+    default: us-east-1
+  ecr_registry:
+    required: true
+    description: ECR registry base URL, e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com
+  context:
+    required: true
+    description: Docker build context path relative to repo root (e.g. backend)
+  service_name:
+    required: true
+    description: Service slug used in the image tag (e.g. backend, frontend, report-runner)
+  image_tag:
+    required: true
+    description: Tag to apply to the pushed image
+
+runs:
+  using: composite
+  steps:
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ inputs.aws_access_key_id }}
+        aws-secret-access-key: ${{ inputs.aws_secret_access_key }}
+        aws-region: ${{ inputs.aws_region }}
+
+    - uses: aws-actions/amazon-ecr-login@v2
+
+    - uses: docker/setup-buildx-action@v3
+
+    - uses: docker/build-push-action@v6
+      with:
+        context: ${{ inputs.context }}
+        push: true
+        tags: ${{ inputs.ecr_registry }}/orders-${{ inputs.service_name }}-orders:${{ inputs.image_tag }}
+        cache-from: type=gha,scope=${{ inputs.service_name }}
+        cache-to: type=gha,scope=${{ inputs.service_name }},mode=max
