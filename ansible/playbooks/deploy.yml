@@ -21,6 +21,8 @@
         cluster: "{{ ecs_cluster }}"
         task_definition: "{{ ecs_cluster }}-orders-backend"
         launch_type: FARGATE
+        count: 1
+        started_by: "ansible-deploy"
         network_configuration:
           subnets: "{{ migrate_subnets }}"
           security_groups: "{{ migrate_security_groups }}"
