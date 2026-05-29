@@ -19,7 +19,7 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           version: "latest"
-      - run: uv run ruff check .
+      - run: uv run --extra dev ruff check .
         working-directory: backend
 
   backend-test:
@@ -44,7 +44,7 @@ jobs:
         with:
           version: "latest"
       - name: Run tests with coverage
-        run: uv run pytest --cov=app --cov-report=html --cov-report=xml --cov-fail-under=60 -q
+        run: uv run --extra dev pytest --cov=app --cov-report=html --cov-report=xml --cov-fail-under=60 -q
         working-directory: backend
         env:
           DATABASE_URL: postgresql+psycopg://orders:orders@localhost:5432/orders
