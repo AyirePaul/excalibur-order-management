@@ -37,9 +37,6 @@ export const ordersApi = {
   combine: (req: CombineRequest) =>
     apiClient.post<CombineResponse>("/orders/combine", req).then((r) => r.data),
 
-  latestReportUrl: () =>
-    apiClient.get<{ url: string }>("/api/reports/latest-url").then((r) => r.data.url),
-
   exportCsvUrl: (req: CombineRequest) => {
     const params = new URLSearchParams({
       amountOp: req.amountOp,
