@@ -75,7 +75,7 @@ module "backend" {
 # Allow backend task role to read from the reports bucket (for presigned URL signing)
 resource "aws_iam_role_policy" "backend_s3_reports" {
   name = "${var.name_prefix}-backend-s3-reports"
-  role = module.backend.task_role_arn
+  role = module.backend.task_role_name
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
