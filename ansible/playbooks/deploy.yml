@@ -12,6 +12,7 @@
     alb_url: "http://localhost:8000"
     migrate_subnets: []
     migrate_security_groups: []
+    migrate_task_definition: ""
     image_tag: "latest"
 
   tasks:
@@ -19,7 +20,7 @@
       community.aws.ecs_task:
         operation: run
         cluster: "{{ ecs_cluster }}"
-        task_definition: "{{ ecs_cluster }}-orders-backend"
+        task_definition: "{{ migrate_task_definition }}"
         launch_type: FARGATE
         count: 1
         started_by: "ansible-deploy"
@@ -33,14 +34,14 @@
               command: ["alembic", "upgrade", "head"]
         wait: true
       register: migrate_task
-      when: migrate_subnets | length > 0
+      when: migrate_subnets | length > 0 and migrate_task_definition != ""
 
     - name: Assert migration succeeded
       ansible.builtin.assert:
         that:
           - migrate_task.tasks[0].containers[0].exitCode == 0
         fail_msg: "Migration task exited with non-zero code"
-      when: migrate_subnets | length > 0
+      when: migrate_subnets | length > 0 and migrate_task_definition != ""
 
     - name: Force new deployment of backend
       community.aws.ecs_service:

@@ -23,6 +23,11 @@ output "ecs_backend_sg_id" {
   value       = module.backend.ecs_sg_id
 }
 
+output "backend_task_def_arn" {
+  description = "Backend ECS task definition ARN (passed to Ansible for the migration RunTask)."
+  value       = module.backend.task_def_arn
+}
+
 output "ecr_backend_url" {
   description = "ECR repository URL for the backend image."
   value       = module.ecr.repository_urls["backend"]
