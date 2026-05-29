@@ -19,8 +19,8 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           version: "latest"
-      - run: uv run ruff check backend/
-        working-directory: .
+      - run: uv run ruff check .
+        working-directory: backend
 
   backend-test:
     name: Backend tests
@@ -41,9 +41,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
-      - name: Install dependencies
-        run: uv pip install -e ".[dev]"
-        working-directory: backend
+        with:
+          version: "latest"
       - name: Run tests with coverage
         run: uv run pytest --cov=app --cov-report=html --cov-report=xml --cov-fail-under=60 -q
         working-directory: backend
@@ -84,8 +83,6 @@ jobs:
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
-        env:
-          VITE_API_BASE_URL: https://orders.example.com
       - run: npm run test -- --coverage
         working-directory: frontend
 
