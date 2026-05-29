@@ -30,7 +30,6 @@
             - name: backend
               command: ["alembic", "upgrade", "head"]
         wait: true
-        wait_timeout: 300
       register: migrate_task
       when: migrate_subnets | length > 0
 
@@ -47,8 +46,6 @@
         cluster: "{{ ecs_cluster }}"
         name: "{{ ecs_cluster }}-orders-backend"
         force_new_deployment: true
-        wait: true
-        wait_timeout: 300
 
     - name: Force new deployment of frontend
       community.aws.ecs_service:
@@ -56,8 +53,6 @@
         cluster: "{{ ecs_cluster }}"
         name: "{{ ecs_cluster }}-orders-frontend"
         force_new_deployment: true
-        wait: true
-        wait_timeout: 300
 
     - name: Healthcheck — wait for /healthz to return 200
       ansible.builtin.uri:

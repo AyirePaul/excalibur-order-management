@@ -209,4 +209,4 @@ All checks run on 2026-05-29.
 
 ---
 
-*Built by Claude Sonnet 4.6 (1M context). Every line is explainable by the candidate.*
+*Built with Claude Sonnet 4.6 (1M context). Every line is explainable by the candidate.*
