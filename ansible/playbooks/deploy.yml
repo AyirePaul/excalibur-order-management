@@ -15,29 +15,25 @@
     image_tag: "latest"
 
   tasks:
-    - name: Run DB migrations via ECS RunTask
-      amazon.aws.ecs_task:
-        operation: run
-        cluster: "{{ ecs_cluster }}"
-        task_definition: "{{ ecs_cluster }}-orders-backend"
-        launch_type: FARGATE
-        network_configuration:
-          subnets: "{{ migrate_subnets }}"
-          security_groups: "{{ migrate_security_groups }}"
-          assign_public_ip: false
-        overrides:
-          containerOverrides:
-            - name: backend
-              command: ["alembic", "upgrade", "head"]
-        wait: true
-        wait_timeout: 300
-      register: migrate_task
-
-    - name: Assert migration succeeded
-      assert:
-        that:
-          - migrate_task.tasks[0].containers[0].exitCode == 0
-        fail_msg: "Migration task exited with non-zero code"
+    - name: Run DB migrations via ECS RunTask (AWS CLI)
+      ansible.builtin.shell: |
+        set -e
+        TASK_ARN=$(aws ecs run-task \
+          --cluster "{{ ecs_cluster }}" \
+          --task-definition "{{ ecs_cluster }}-orders-backend" \
+          --launch-type FARGATE \
+          --network-configuration "awsvpcConfiguration={subnets=[{{ migrate_subnets | join(',') }}],securityGroups=[{{ migrate_security_groups | join(',') }}],assignPublicIp=DISABLED}" \
+          --overrides '{"containerOverrides":[{"name":"backend","command":["alembic","upgrade","head"]}]}' \
+          --query "tasks[0].taskArn" --output text)
+        echo "Migration task: $TASK_ARN"
+        aws ecs wait tasks-stopped --cluster "{{ ecs_cluster }}" --tasks "$TASK_ARN"
+        EXIT=$(aws ecs describe-tasks \
+          --cluster "{{ ecs_cluster }}" \
+          --tasks "$TASK_ARN" \
+          --query "tasks[0].containers[0].exitCode" --output text)
+        echo "Exit code: $EXIT"
+        [ "$EXIT" = "0" ] || { echo "Migration failed with exit code $EXIT"; exit 1; }
+      when: migrate_subnets | length > 0
 
     - name: Force new deployment of backend
       amazon.aws.ecs_service:
