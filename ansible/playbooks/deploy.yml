@@ -15,28 +15,35 @@
     image_tag: "latest"
 
   tasks:
-    - name: Run DB migrations via ECS RunTask (AWS CLI)
-      ansible.builtin.shell: |
-        set -e
-        TASK_ARN=$(aws ecs run-task \
-          --cluster "{{ ecs_cluster }}" \
-          --task-definition "{{ ecs_cluster }}-orders-backend" \
-          --launch-type FARGATE \
-          --network-configuration "awsvpcConfiguration={subnets=[{{ migrate_subnets | join(',') }}],securityGroups=[{{ migrate_security_groups | join(',') }}],assignPublicIp=DISABLED}" \
-          --overrides '{"containerOverrides":[{"name":"backend","command":["alembic","upgrade","head"]}]}' \
-          --query "tasks[0].taskArn" --output text)
-        echo "Migration task: $TASK_ARN"
-        aws ecs wait tasks-stopped --cluster "{{ ecs_cluster }}" --tasks "$TASK_ARN"
-        EXIT=$(aws ecs describe-tasks \
-          --cluster "{{ ecs_cluster }}" \
-          --tasks "$TASK_ARN" \
-          --query "tasks[0].containers[0].exitCode" --output text)
-        echo "Exit code: $EXIT"
-        [ "$EXIT" = "0" ] || { echo "Migration failed with exit code $EXIT"; exit 1; }
+    - name: Run DB migrations via ECS RunTask
+      community.aws.ecs_task:
+        operation: run
+        cluster: "{{ ecs_cluster }}"
+        task_definition: "{{ ecs_cluster }}-orders-backend"
+        launch_type: FARGATE
+        network_configuration:
+          subnets: "{{ migrate_subnets }}"
+          security_groups: "{{ migrate_security_groups }}"
+          assign_public_ip: false
+        overrides:
+          containerOverrides:
+            - name: backend
+              command: ["alembic", "upgrade", "head"]
+        wait: true
+        wait_timeout: 300
+      register: migrate_task
+      when: migrate_subnets | length > 0
+
+    - name: Assert migration succeeded
+      ansible.builtin.assert:
+        that:
+          - migrate_task.tasks[0].containers[0].exitCode == 0
+        fail_msg: "Migration task exited with non-zero code"
       when: migrate_subnets | length > 0
 
     - name: Force new deployment of backend
-      amazon.aws.ecs_service:
+      community.aws.ecs_service:
+        state: present
         cluster: "{{ ecs_cluster }}"
         name: "{{ ecs_cluster }}-orders-backend"
         force_new_deployment: true
@@ -44,7 +51,8 @@
         wait_timeout: 300
 
     - name: Force new deployment of frontend
-      amazon.aws.ecs_service:
+      community.aws.ecs_service:
+        state: present
         cluster: "{{ ecs_cluster }}"
         name: "{{ ecs_cluster }}-orders-frontend"
         force_new_deployment: true
@@ -52,7 +60,7 @@
         wait_timeout: 300
 
     - name: Healthcheck — wait for /healthz to return 200
-      uri:
+      ansible.builtin.uri:
         url: "{{ alb_url }}/healthz"
         method: GET
         status_code: 200
@@ -63,5 +71,5 @@
       delay: 10
 
     - name: Deployment complete
-      debug:
+      ansible.builtin.debug:
         msg: "Deployed image tag '{{ image_tag }}' to cluster '{{ ecs_cluster }}' successfully"
