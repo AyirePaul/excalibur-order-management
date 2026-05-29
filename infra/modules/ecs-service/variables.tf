@@ -62,21 +62,10 @@ variable "secret_arns" {
   default     = []
 }
 
-variable "kms_key_arns" {
-  description = "KMS key ARNs that encrypt the secrets, for execution role kms:Decrypt permission."
-  type        = list(string)
-  default     = []
-}
-
 variable "additional_sg_ids" {
   description = "Additional security groups to attach to ECS task ENIs (e.g. the RDS db-client SG)."
   type        = list(string)
   default     = []
-}
-
-variable "reports_bucket" {
-  type    = string
-  default = ""
 }
 
 variable "environment_vars" {

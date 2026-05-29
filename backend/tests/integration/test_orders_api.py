@@ -11,10 +11,11 @@ from app.models.order_detail import OrderDetail
 
 def _seed(db, n=5):
     """Insert n order pairs and return their UUIDs."""
+    this_year = date.today().year
     ids = []
     for i in range(n):
         oid = uuid.uuid4()
-        db.add(OrderDate(order_id=oid, order_date=date(2025, i + 1, 1)))
+        db.add(OrderDate(order_id=oid, order_date=date(this_year, (i % 12) + 1, 1)))
         db.add(
             OrderDetail(
                 order_id=oid,

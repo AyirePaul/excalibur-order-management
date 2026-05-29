@@ -1,0 +1,3 @@
+# Copy to backend.hcl (gitignored) and substitute your AWS account ID.
+# Generated automatically by `make tf-bootstrap`.
+bucket = "orders-tf-state-123456789012"

@@ -1,4 +1,4 @@
-.PHONY: help up down restart logs migrate seed test test-backend test-frontend e2e lint fmt build clean report tf-plan tf-apply tf-destroy ansible-deploy ansible-rollback
+.PHONY: help up down restart logs migrate seed test test-backend test-frontend lint fmt build clean report tf-bootstrap tf-init tf-plan tf-apply tf-destroy ansible-deploy
 
 help:
 	@echo "Local dev:"
@@ -8,19 +8,19 @@ help:
 	@echo "  make migrate          # run alembic upgrade head inside backend container"
 	@echo "  make seed             # run migrations then load db/seed.sql"
 	@echo "  make test             # unit + integration (backend + frontend)"
-	@echo "  make e2e              # Playwright e2e"
 	@echo "  make lint             # pre-commit run --all-files"
 	@echo "  make fmt              # ruff/black/prettier/terraform fmt"
+	@echo "  make report           # run JasperReport runner (writes PDF to ./out/)"
 	@echo ""
-	@echo "Infra (pass ENV=dev|qa|prod):"
-	@echo "  make tf-apply-foundation ENV=dev  # step 1 (first time): apply kms/network/cognito/ecr/ecs-cluster/github-oidc"
-	@echo "  make tf-apply ENV=dev             # step 2: apply remaining modules (run --all apply)"
-	@echo "  make tf-plan  ENV=dev             # plan changes — works once state exists"
-	@echo "  make tf-destroy ENV=dev"
+	@echo "Infra (single environment, plain Terraform):"
+	@echo "  make tf-bootstrap     # one-time: create state bucket + lock table, generate infra/backend.hcl"
+	@echo "  make tf-init          # terraform init -backend-config=infra/backend.hcl"
+	@echo "  make tf-plan          # terraform plan in infra/"
+	@echo "  make tf-apply         # terraform apply in infra/"
+	@echo "  make tf-destroy       # terraform destroy in infra/"
 	@echo ""
 	@echo "Deploy:"
-	@echo "  make ansible-deploy ENV=dev"
-	@echo "  make ansible-rollback ENV=dev"
+	@echo "  make ansible-deploy   # run Ansible deploy playbook"
 
 up:
 	docker compose up -d --build
@@ -48,9 +48,6 @@ test-backend:
 test-frontend:
 	cd frontend && npm run test -- --coverage
 
-e2e:
-	cd frontend && npx playwright test
-
 lint:
 	pre-commit run --all-files
 
@@ -65,8 +62,6 @@ build:
 
 report:
 	@mkdir -p out
-	docker compose exec db psql -U $${POSTGRES_USER:-orders} -d $${POSTGRES_DB:-orders} \
-	  -c "SELECT COUNT(*) FROM order_combined;" 2>/dev/null || true
 	docker compose run --rm \
 	  -e POSTGRES_HOST=db \
 	  -e POSTGRES_PORT=5432 \
@@ -76,7 +71,7 @@ report:
 	  -e OUTPUT_DIR=/out \
 	  -v $$(pwd)/out:/out \
 	  report-runner
-	@echo "PDF written to ./out/"
+	@echo "PDF written to ./out/ — visit http://localhost:8000/api/reports/latest to view"
 
 clean:
 	docker compose down -v --rmi local
@@ -84,30 +79,45 @@ clean:
 	rm -rf frontend/dist frontend/coverage frontend/.vite
 	find . -name __pycache__ -exec rm -rf {} +
 
-ENV ?= dev
+# ── Terraform ──────────────────────────────────────────────────────────────────
 
-# Terragrunt >=1.0 uses 'run --all'; older versions used 'run-all'
+# Bootstrap: create the account-scoped S3 state bucket + DynamoDB lock table,
+# then write infra/backend.hcl so subsequent `terraform init` picks it up.
+tf-bootstrap:
+	@ACCOUNT_ID=$$(aws sts get-caller-identity --query Account --output text) && \
+	BUCKET="orders-tf-state-$${ACCOUNT_ID}" && \
+	echo "→ account: $${ACCOUNT_ID}" && \
+	echo "→ bucket:  $${BUCKET}" && \
+	aws s3api head-bucket --bucket "$${BUCKET}" 2>/dev/null && \
+	  echo "bucket already exists, skipping create" || \
+	  (aws s3api create-bucket --bucket "$${BUCKET}" --region us-east-1 && \
+	   aws s3api put-bucket-versioning \
+	     --bucket "$${BUCKET}" \
+	     --versioning-configuration Status=Enabled) && \
+	aws dynamodb describe-table --table-name orders-tf-locks --region us-east-1 \
+	  --query "Table.TableName" --output text 2>/dev/null && \
+	  echo "lock table already exists, skipping create" || \
+	  aws dynamodb create-table \
+	    --table-name orders-tf-locks \
+	    --attribute-definitions AttributeName=LockID,AttributeType=S \
+	    --key-schema AttributeName=LockID,KeyType=HASH \
+	    --billing-mode PAY_PER_REQUEST \
+	    --region us-east-1 && \
+	echo "bucket = \"$${BUCKET}\"" > infra/backend.hcl && \
+	echo "→ wrote infra/backend.hcl" && \
+	echo "→ run: make tf-init"
 
-# First-time bootstrap: apply foundation modules (no upstream deps) so
-# run --all plan/apply can resolve their outputs on subsequent runs.
-FOUNDATION := kms network cognito ecr github-oidc ecs-cluster
-tf-apply-foundation:
-	@for unit in $(FOUNDATION); do \
-		echo "==> applying $$unit"; \
-		(cd infra/live/$(ENV)/us-east-1/$$unit && terragrunt apply --auto-approve --terragrunt-non-interactive) || exit 1; \
-	done
+tf-init:
+	terraform -chdir=infra init -backend-config=backend.hcl
 
 tf-plan:
-	cd infra/live/$(ENV)/us-east-1 && terragrunt run --all plan
+	terraform -chdir=infra plan
 
 tf-apply:
-	cd infra/live/$(ENV)/us-east-1 && terragrunt run --all apply
+	terraform -chdir=infra apply
 
 tf-destroy:
-	cd infra/live/$(ENV)/us-east-1 && terragrunt run --all destroy
+	terraform -chdir=infra destroy
 
 ansible-deploy:
-	cd ansible && ansible-playbook -i inventories/$(ENV)/hosts.yml playbooks/deploy.yml
-
-ansible-rollback:
-	cd ansible && ansible-playbook -i inventories/$(ENV)/hosts.yml playbooks/rollback.yml
+	cd ansible && ansible-playbook -i inventories/dev/hosts.yml playbooks/deploy.yml

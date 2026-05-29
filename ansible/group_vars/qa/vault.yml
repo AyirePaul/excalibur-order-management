@@ -1,8 +1,0 @@
-# PLAINTEXT EXAMPLE — NOT ENCRYPTED
-# This file contains placeholder values for reference only.
-# Before deploying, replace ARNs/IDs with real values and encrypt:
-#   ansible-vault encrypt ansible/group_vars/qa/vault.yml
-# The vault password file is expected at ~/.vault_pass (configured in ansible.cfg).
-vault_db_secret_arn: "arn:aws:secretsmanager:us-east-1:REPLACE:secret/orders/qa/db-credentials"
-vault_cognito_user_pool_id: "REPLACE_USER_POOL_ID"
-vault_cognito_app_client_id: "REPLACE_APP_CLIENT_ID"

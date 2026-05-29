@@ -5,22 +5,22 @@ import { MemoryRouter } from "react-router-dom";
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { Combine } from "../src/features/combine/Combine";
 
-const mockCombine = vi.fn().mockResolvedValue({
-  items: [
-    {
-      order_id: "ccc",
-      order_date: "2025-03-10",
-      order_amount: "320.00",
-      order_description: "Industrial widget pack",
-    },
-  ],
-  count: 1,
-});
-
 vi.mock("../src/api/orders", () => ({
   ordersApi: {
-    combine: mockCombine,
-    exportCsvUrl: vi.fn().mockReturnValue("http://localhost:8000/orders/export.csv?amountOp=GT&amountValue=0"),
+    combine: vi.fn().mockResolvedValue({
+      items: [
+        {
+          order_id: "ccc",
+          order_date: "2025-03-10",
+          order_amount: "320.00",
+          order_description: "Industrial widget pack",
+        },
+      ],
+      count: 1,
+    }),
+    exportCsvUrl: vi
+      .fn()
+      .mockReturnValue("http://localhost:8000/orders/export.csv?amountOp=GT&amountValue=0"),
   },
 }));
 
@@ -65,7 +65,9 @@ describe("Combine", () => {
     await waitFor(() =>
       expect(screen.getByText("Industrial widget pack")).toBeInTheDocument(),
     );
-    expect(mockCombine).toHaveBeenCalledOnce();
+
+    const { ordersApi } = await import("../src/api/orders");
+    expect(ordersApi.combine).toHaveBeenCalledOnce();
   });
 
   it("shows Export CSV link after results load", async () => {

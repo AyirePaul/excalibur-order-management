@@ -14,10 +14,6 @@ export default defineConfig({
         target: process.env.VITE_API_BASE_URL ?? "http://localhost:8000",
         changeOrigin: true,
       },
-      "/graphql": {
-        target: process.env.VITE_API_BASE_URL ?? "http://localhost:8000",
-        changeOrigin: true,
-      },
     },
   },
   test: {
@@ -27,7 +23,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
-      exclude: ["node_modules/", "tests/", "e2e/", "*.config.*"],
+      exclude: ["node_modules/", "tests/", "*.config.*"],
     },
   },
 });

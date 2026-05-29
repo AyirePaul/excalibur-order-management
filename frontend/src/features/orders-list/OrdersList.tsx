@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ordersApi, type Order } from "../../api/orders";
 import { Button } from "../../components/Button";
-import { useAuth } from "../../auth/useAuth";
 
 type ViewMode = "table" | "card";
 
@@ -11,7 +10,6 @@ export function OrdersList() {
   const [view, setView] = useState<ViewMode>("table");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { isEditor } = useAuth();
 
   const { data: orders = [], isLoading, isError } = useQuery({
     queryKey: ["orders"],
@@ -58,9 +56,7 @@ export function OrdersList() {
             </button>
           </div>
 
-          {isEditor && (
-            <Button onClick={() => navigate("/orders/new")}>+ New Order</Button>
-          )}
+          <Button onClick={() => navigate("/orders/new")}>+ New Order</Button>
         </div>
       </div>
 
@@ -89,7 +85,6 @@ export function OrdersList() {
                 <TableRow
                   key={order.order_id}
                   order={order}
-                  isEditor={isEditor}
                   onEdit={() => navigate(`/orders/${order.order_id}`)}
                   onDelete={() => deleteMutation.mutate(order.order_id)}
                 />
@@ -106,7 +101,6 @@ export function OrdersList() {
             <OrderCard
               key={order.order_id}
               order={order}
-              isEditor={isEditor}
               onEdit={() => navigate(`/orders/${order.order_id}`)}
               onDelete={() => deleteMutation.mutate(order.order_id)}
             />
@@ -121,19 +115,17 @@ export function OrdersList() {
 
 function TableRow({
   order,
-  isEditor,
   onEdit,
   onDelete,
 }: {
   order: Order;
-  isEditor: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   return (
     <tr
-      className={`hover:bg-gray-50 transition-colors ${isEditor ? "cursor-pointer" : ""}`}
-      onClick={isEditor ? onEdit : undefined}
+      className="hover:bg-gray-50 transition-colors cursor-pointer"
+      onClick={onEdit}
     >
       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.order_date}</td>
       <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
@@ -141,17 +133,15 @@ function TableRow({
       </td>
       <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate">{order.order_description}</td>
       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-        {isEditor && (
-          <button
-            className="text-red-500 hover:text-red-700 ml-4"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-          >
-            Delete
-          </button>
-        )}
+        <button
+          className="text-red-500 hover:text-red-700 ml-4"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+        >
+          Delete
+        </button>
       </td>
     </tr>
   );
@@ -159,12 +149,10 @@ function TableRow({
 
 function OrderCard({
   order,
-  isEditor,
   onEdit,
   onDelete,
 }: {
   order: Order;
-  isEditor: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -181,22 +169,20 @@ function OrderCard({
       <p className="text-gray-700 text-sm leading-relaxed mb-4 line-clamp-2">
         {order.order_description}
       </p>
-      {isEditor && (
-        <div className="flex gap-2 mt-auto">
-          <button
-            onClick={onEdit}
-            className="flex-1 text-center text-sm py-1.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors"
-          >
-            Edit
-          </button>
-          <button
-            onClick={onDelete}
-            className="flex-1 text-center text-sm py-1.5 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition-colors"
-          >
-            Delete
-          </button>
-        </div>
-      )}
+      <div className="flex gap-2 mt-auto">
+        <button
+          onClick={onEdit}
+          className="flex-1 text-center text-sm py-1.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors"
+        >
+          Edit
+        </button>
+        <button
+          onClick={onDelete}
+          className="flex-1 text-center text-sm py-1.5 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+        >
+          Delete
+        </button>
+      </div>
     </div>
   );
 }

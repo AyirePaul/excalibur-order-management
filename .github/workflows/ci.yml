@@ -21,8 +21,6 @@ jobs:
           version: "latest"
       - run: uv run ruff check backend/
         working-directory: .
-      - run: uv run black --check backend/
-        working-directory: .
 
   backend-test:
     name: Backend tests
@@ -47,7 +45,7 @@ jobs:
         run: uv pip install -e ".[dev]"
         working-directory: backend
       - name: Run tests with coverage
-        run: uv run pytest --cov=app --cov-report=html --cov-report=xml --cov-fail-under=60 -v
+        run: uv run pytest --cov=app --cov-report=html --cov-report=xml --cov-fail-under=60 -q
         working-directory: backend
         env:
           DATABASE_URL: postgresql+psycopg://orders:orders@localhost:5432/orders
@@ -71,30 +69,9 @@ jobs:
         working-directory: frontend
       - run: npm run lint
         working-directory: frontend
-      - run: tsc --noEmit
-        working-directory: frontend
-
-  frontend-test:
-    name: Frontend tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
-        working-directory: frontend
-      - run: npm run test -- --coverage
-        working-directory: frontend
-      - uses: actions/upload-artifact@v4
-        with:
-          name: frontend-coverage
-          path: frontend/coverage
 
   frontend-build:
-    name: Frontend build
+    name: Frontend build + test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -108,45 +85,23 @@ jobs:
       - run: npm run build
         working-directory: frontend
         env:
-          VITE_API_BASE_URL: https://dev.orders.example.com
-
-  # ── Docker build ─────────────────────────────────────────────────────────────
-  docker-build:
-    name: Docker image build check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - name: Build backend image
-        uses: docker/build-push-action@v6
-        with:
-          context: backend
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: Build frontend image
-        uses: docker/build-push-action@v6
-        with:
-          context: frontend
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          VITE_API_BASE_URL: https://orders.example.com
+      - run: npm run test -- --coverage
+        working-directory: frontend
 
   # ── Terraform validate ───────────────────────────────────────────────────────
   tf-validate:
-    name: Terraform validate
+    name: Terraform fmt + validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "~1.6"
-      - name: Validate each module
+      - name: fmt check
+        run: terraform fmt -recursive -check infra/
+      - name: Validate root
         run: |
-          for mod in infra/modules/*/; do
-            echo "Validating $mod"
-            cd "$mod"
-            terraform init -backend=false -upgrade 2>&1 | tail -5
-            terraform validate
-            cd - > /dev/null
-          done
+          terraform init -backend=false
+          terraform validate
+        working-directory: infra

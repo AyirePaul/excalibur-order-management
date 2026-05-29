@@ -1,27 +1,71 @@
 ---
-# Idempotent deploy playbook: db-migrate → app-deploy → healthcheck
-# Re-running with the same IMAGE_TAG reports changed=0.
-- name: Deploy Order Management application
-  hosts: all
+# Single-play deploy: migrate → force-deploy backend + frontend → healthcheck.
+# Idempotent: re-running with the same image_tag reports changed=0.
+# Variables come from CI --extra-vars; fallback defaults allow local testing.
+- name: Deploy Order Management
+  hosts: localhost
+  connection: local
   gather_facts: false
 
   vars:
-    image_tag: "{{ lookup('env', 'IMAGE_TAG') | default('latest', true) }}"
+    ecs_cluster: "orders"
+    alb_url: "http://localhost:8000"
+    migrate_subnets: []
+    migrate_security_groups: []
+    image_tag: "latest"
 
-  pre_tasks:
-    - name: Validate required variables
+  tasks:
+    - name: Run DB migrations via ECS RunTask
+      amazon.aws.ecs_task:
+        operation: run
+        cluster: "{{ ecs_cluster }}"
+        task_definition: "{{ ecs_cluster }}-orders-backend"
+        launch_type: FARGATE
+        network_configuration:
+          subnets: "{{ migrate_subnets }}"
+          security_groups: "{{ migrate_security_groups }}"
+          assign_public_ip: false
+        overrides:
+          containerOverrides:
+            - name: backend
+              command: ["alembic", "upgrade", "head"]
+        wait: true
+        wait_timeout: 300
+      register: migrate_task
+
+    - name: Assert migration succeeded
       assert:
         that:
-          - env is defined
-          - aws_region is defined
-        fail_msg: "env and aws_region must be set (via inventory or extra-vars)"
+          - migrate_task.tasks[0].containers[0].exitCode == 0
+        fail_msg: "Migration task exited with non-zero code"
 
-  roles:
-    - role: db-migrate
-    - role: app-deploy
-    - role: healthcheck
+    - name: Force new deployment of backend
+      amazon.aws.ecs_service:
+        cluster: "{{ ecs_cluster }}"
+        name: "{{ ecs_cluster }}-orders-backend"
+        force_new_deployment: true
+        wait: true
+        wait_timeout: 300
 
-  post_tasks:
+    - name: Force new deployment of frontend
+      amazon.aws.ecs_service:
+        cluster: "{{ ecs_cluster }}"
+        name: "{{ ecs_cluster }}-orders-frontend"
+        force_new_deployment: true
+        wait: true
+        wait_timeout: 300
+
+    - name: Healthcheck — wait for /healthz to return 200
+      uri:
+        url: "{{ alb_url }}/healthz"
+        method: GET
+        status_code: 200
+        validate_certs: false
+      register: health
+      until: health.status == 200
+      retries: 15
+      delay: 10
+
     - name: Deployment complete
       debug:
-        msg: "Deployed image tag '{{ image_tag }}' to {{ env }} successfully"
+        msg: "Deployed image tag '{{ image_tag }}' to cluster '{{ ecs_cluster }}' successfully"

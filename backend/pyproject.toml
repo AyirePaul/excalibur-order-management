@@ -1,7 +1,7 @@
 [project]
 name = "orders-api"
 version = "0.1.0"
-description = "Order Management backend — FastAPI + SQLAlchemy + Strawberry"
+description = "Order Management backend — FastAPI + SQLAlchemy"
 requires-python = ">=3.12"
 
 dependencies = [
@@ -12,15 +12,7 @@ dependencies = [
     "alembic>=1.13",
     "pydantic>=2.9",
     "pydantic-settings>=2.5",
-    "strawberry-graphql[fastapi]>=0.245",
-    "python-jose[cryptography]>=3.3",
-    "boto3>=1.35",
     "structlog>=24.4",
-    "opentelemetry-api>=1.27",
-    "opentelemetry-sdk>=1.27",
-    "opentelemetry-instrumentation-fastapi>=0.48b0",
-    "opentelemetry-instrumentation-sqlalchemy>=0.48b0",
-    "opentelemetry-exporter-otlp-proto-http>=1.27",
     "httpx>=0.27",
 ]
 

@@ -1,8 +1,6 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { App } from "./App";
-import { AuthCallback } from "./auth/AuthCallback";
-import { ProtectedRoute } from "./auth/ProtectedRoute";
 
 // Lazy-loaded routes for code splitting
 const OrdersList = lazy(() =>
@@ -29,56 +27,45 @@ export function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/auth/callback" element={<AuthCallback />} />
         <Route element={<App />}>
           <Route
             index
             element={
-              <ProtectedRoute>
-                <Suspense fallback={<Loading />}>
-                  <OrdersList />
-                </Suspense>
-              </ProtectedRoute>
+              <Suspense fallback={<Loading />}>
+                <OrdersList />
+              </Suspense>
             }
           />
           <Route
             path="orders/new"
             element={
-              <ProtectedRoute requireEditor>
-                <Suspense fallback={<Loading />}>
-                  <OrdersNew />
-                </Suspense>
-              </ProtectedRoute>
+              <Suspense fallback={<Loading />}>
+                <OrdersNew />
+              </Suspense>
             }
           />
           <Route
             path="orders/:id"
             element={
-              <ProtectedRoute requireEditor>
-                <Suspense fallback={<Loading />}>
-                  <OrdersEdit />
-                </Suspense>
-              </ProtectedRoute>
+              <Suspense fallback={<Loading />}>
+                <OrdersEdit />
+              </Suspense>
             }
           />
           <Route
             path="combine"
             element={
-              <ProtectedRoute>
-                <Suspense fallback={<Loading />}>
-                  <Combine />
-                </Suspense>
-              </ProtectedRoute>
+              <Suspense fallback={<Loading />}>
+                <Combine />
+              </Suspense>
             }
           />
           <Route
             path="reports"
             element={
-              <ProtectedRoute>
-                <Suspense fallback={<Loading />}>
-                  <Reports />
-                </Suspense>
-              </ProtectedRoute>
+              <Suspense fallback={<Loading />}>
+                <Reports />
+              </Suspense>
             }
           />
         </Route>

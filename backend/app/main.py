@@ -1,10 +1,11 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
-from app.api.graphql.schema import graphql_app
 from app.api.rest.health import router as health_router
 from app.api.rest.orders import router as orders_router
 from app.core.config import get_settings
@@ -12,20 +13,13 @@ from app.core.logging import setup_logging
 
 log = structlog.get_logger(__name__)
 
+REPORTS_DIR = Path("/reports")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     setup_logging(settings.app_log_level)
-
-    # OTel initialisation is best-effort — skip if collector unreachable in local dev
-    try:
-        from app.core.telemetry import setup_telemetry
-
-        setup_telemetry(app)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("otel_init_skipped", reason=str(exc))
-
     log.info("startup", env=settings.app_env)
     yield
     log.info("shutdown")
@@ -53,14 +47,15 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(orders_router, prefix="/orders")
-    app.include_router(graphql_app, prefix="/graphql")
 
-    @app.get("/api/reports/latest-url")
-    def latest_report_url():
-        from app.reporting.presign import get_latest_report_url
-
-        url = get_latest_report_url()
-        return {"url": url}
+    @app.get("/api/reports/latest")
+    def latest_report():
+        if not REPORTS_DIR.exists():
+            raise HTTPException(status_code=404, detail="No reports directory")
+        pdfs = sorted(REPORTS_DIR.glob("*.pdf"))
+        if not pdfs:
+            raise HTTPException(status_code=404, detail="No report generated yet")
+        return FileResponse(pdfs[-1], media_type="application/pdf")
 
     return app
 

@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars and fill in values before running terraform apply.
+# terraform.tfvars is gitignored — never commit real values.
+
+name_prefix         = "orders"
+db_username         = "orders"
+db_name             = "orders"
+
+# Leave empty to use HTTP-only ALB (fine for dev/demo).
+# Set to your ACM certificate ARN to enable HTTPS + HTTP→HTTPS redirect.
+acm_certificate_arn = ""
+
+# Set after ECR repos exist (output of a first partial apply).
+# Format: <account>.dkr.ecr.us-east-1.amazonaws.com/orders-backend-orders:<tag>
+backend_image  = "orders-backend:latest"
+frontend_image = "orders-frontend:latest"
+
+availability_zones = ["us-east-1a", "us-east-1b"]

@@ -17,26 +17,8 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
     enable_docs: bool = True
 
-    # AWS
-    aws_region: str = "us-east-1"
-
-    # Cognito
-    cognito_user_pool_id: str = ""
-    cognito_app_client_id: str = ""
-    cognito_region: str = "us-east-1"
-    cognito_domain: str = ""
-
-    # Reports
-    reports_bucket: str = ""
-    report_runner_task_definition: str = ""
-
-    # OTel
-    otel_exporter_otlp_endpoint: str = "http://localhost:4318"
-    otel_service_name: str = "orders-api"
-
     @property
     def cors_origins_list(self) -> list[str]:
-        # Guard against empty string yielding [""] which CORS middleware treats as a valid origin
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
 

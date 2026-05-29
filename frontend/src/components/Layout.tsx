@@ -1,14 +1,11 @@
 import type { ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
-import { useAuth } from "../auth/useAuth";
 
 interface Props {
   children: ReactNode;
 }
 
 export function Layout({ children }: Props) {
-  const { isAuthenticated, isEditor, user, login, logout } = useAuth();
-
   const navClass = ({ isActive }: { isActive: boolean }) =>
     `px-3 py-2 rounded text-sm font-medium transition-colors ${
       isActive ? "bg-brand-700 text-white" : "text-blue-100 hover:bg-brand-600 hover:text-white"
@@ -32,35 +29,10 @@ export function Layout({ children }: Props) {
             <NavLink to="/reports" className={navClass}>
               Reports
             </NavLink>
-            {isEditor && (
-              <NavLink to="/orders/new" className={navClass}>
-                + New Order
-              </NavLink>
-            )}
+            <NavLink to="/orders/new" className={navClass}>
+              + New Order
+            </NavLink>
           </nav>
-
-          <div className="flex items-center gap-3">
-            {isAuthenticated ? (
-              <>
-                <span className="text-sm text-blue-200 hidden sm:block">
-                  {(user?.profile as Record<string, string> | undefined)?.email ?? ""}
-                </span>
-                <button
-                  onClick={logout}
-                  className="text-sm px-3 py-1 border border-blue-400 text-blue-200 rounded hover:bg-brand-700 transition-colors"
-                >
-                  Sign out
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={login}
-                className="text-sm px-3 py-1 bg-brand-600 text-white rounded hover:bg-brand-500 transition-colors"
-              >
-                Sign in
-              </button>
-            )}
-          </div>
         </div>
       </header>
 
@@ -69,7 +41,7 @@ export function Layout({ children }: Props) {
       </main>
 
       <footer className="border-t border-gray-200 text-center text-xs text-gray-400 py-4">
-        Order Management — Excalibur Assignment Tier 4
+        Order Management — Excalibur Assignment Tier 3
       </footer>
     </div>
   );

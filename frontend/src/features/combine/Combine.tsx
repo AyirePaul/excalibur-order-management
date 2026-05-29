@@ -52,8 +52,9 @@ export function Combine() {
         className="bg-white rounded-lg shadow p-6 mb-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
       >
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Date From</label>
+          <label htmlFor="dateFrom" className="block text-sm font-medium text-gray-700 mb-1">Date From</label>
           <input
+            id="dateFrom"
             type="date"
             {...register("dateFrom")}
             className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
@@ -61,8 +62,9 @@ export function Combine() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Date To</label>
+          <label htmlFor="dateTo" className="block text-sm font-medium text-gray-700 mb-1">Date To</label>
           <input
+            id="dateTo"
             type="date"
             {...register("dateTo")}
             className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
@@ -70,8 +72,9 @@ export function Combine() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Amount Filter</label>
+          <label htmlFor="amountOp" className="block text-sm font-medium text-gray-700 mb-1">Amount Filter</label>
           <select
+            id="amountOp"
             {...register("amountOp")}
             className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
           >
@@ -82,10 +85,11 @@ export function Combine() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="amountValue" className="block text-sm font-medium text-gray-700 mb-1">
             {amountOp === "BETWEEN" ? "Amount (min)" : "Amount"}
           </label>
           <input
+            id="amountValue"
             type="number"
             step="0.01"
             {...register("amountValue")}
@@ -95,8 +99,9 @@ export function Combine() {
 
         {amountOp === "BETWEEN" && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Amount (max)</label>
+            <label htmlFor="amountValue2" className="block text-sm font-medium text-gray-700 mb-1">Amount (max)</label>
             <input
+              id="amountValue2"
               type="number"
               step="0.01"
               {...register("amountValue2")}

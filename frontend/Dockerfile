@@ -13,6 +13,12 @@ CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
 
 # --- builder: compile static bundle ---
 FROM base AS builder
+# VITE_API_BASE_URL defaults to "" so the production bundle uses relative URLs.
+# The ALB routes /orders* and /api/* to the backend on the same domain, so no
+# absolute URL needs to be baked in. Override via --build-arg if deploying the
+# frontend on a separate domain.
+ARG VITE_API_BASE_URL=""
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 RUN npm install
 COPY . .
 RUN npm run build

@@ -1,101 +1,34 @@
 name: CD
 
-# ── Triggers ────────────────────────────────────────────────────────────────
-# push main  → deploys to dev (default)
-# push v*.*.* tag → deploys to qa
-# workflow_dispatch → deploys to the chosen environment (defaults to dev)
 on:
   push:
     branches: [main]
-    tags: ["v*.*.*"]
   workflow_dispatch:
-    inputs:
-      environment:
-        description: "Target environment"
-        type: choice
-        options: [dev, qa, prod]
-        default: dev
-      image_tag:
-        description: "Image tag to deploy (leave blank to build from current commit)"
-        required: false
 
 permissions:
-  id-token: write
   contents: read
 
-# ── Environment resolution ───────────────────────────────────────────────────
-# Each GitHub Environment (dev / qa / prod) owns its own secrets:
-#   AWS_DEPLOY_ROLE_ARN   – OIDC role for that account
-#   ALB_URL               – public endpoint for health/e2e
-#   COGNITO_AUTHORITY     – https://cognito-idp.<region>.amazonaws.com/<pool>
-#   COGNITO_CLIENT_ID     – app client id
-#   E2E_VIEWER_EMAIL      – Playwright viewer user
-#   E2E_VIEWER_PASSWORD
-# This lets all jobs reference secrets.* uniformly; GitHub injects the right
-# values based on which environment is active on the job.
-
 jobs:
-  # ── 1. Determine env + image tag ──────────────────────────────────────────
-  setup:
-    name: Resolve deployment target
-    runs-on: ubuntu-latest
-    outputs:
-      deploy_env: ${{ steps.resolve.outputs.deploy_env }}
-      image_tag:  ${{ steps.resolve.outputs.image_tag }}
-      run_e2e:    ${{ steps.resolve.outputs.run_e2e }}
-    steps:
-      - name: Resolve env and tag
-        id: resolve
-        run: |
-          case "${{ github.event_name }}" in
-            workflow_dispatch)
-              DEPLOY_ENV="${{ inputs.environment }}"
-              RAW_TAG="${{ inputs.image_tag || github.sha }}"
-              ;;
-            push)
-              if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-                DEPLOY_ENV="qa"
-                RAW_TAG="${GITHUB_REF_NAME}"
-              else
-                DEPLOY_ENV="dev"
-                RAW_TAG="${GITHUB_SHA}"
-              fi
-              ;;
-            *)
-              DEPLOY_ENV="dev"
-              RAW_TAG="${GITHUB_SHA}"
-              ;;
-          esac
-
-          # Shorten full 40-char SHAs to 8 chars; leave semver tags untouched
-          [[ "${#RAW_TAG}" -eq 40 ]] && IMAGE_TAG="${RAW_TAG:0:8}" || IMAGE_TAG="$RAW_TAG"
-
-          # Only run Playwright e2e against dev (it needs a live stack + credentials)
-          [[ "$DEPLOY_ENV" == "dev" ]] && RUN_E2E="true" || RUN_E2E="false"
-
-          echo "deploy_env=$DEPLOY_ENV" >> "$GITHUB_OUTPUT"
-          echo "image_tag=$IMAGE_TAG"   >> "$GITHUB_OUTPUT"
-          echo "run_e2e=$RUN_E2E"       >> "$GITHUB_OUTPUT"
-          echo "→ environment=$DEPLOY_ENV  tag=$IMAGE_TAG  e2e=$RUN_E2E"
-
-  # ── 2. Build & push images ────────────────────────────────────────────────
+  # ── 1. Build & push images ────────────────────────────────────────────────
   build-push:
     name: Build & push to ECR
     runs-on: ubuntu-latest
-    needs: setup
-    environment: ${{ needs.setup.outputs.deploy_env }}
+    environment: production
     env:
-      DEPLOY_ENV: ${{ needs.setup.outputs.deploy_env }}
-      IMAGE_TAG:  ${{ needs.setup.outputs.image_tag }}
       AWS_REGION: us-east-1
     outputs:
-      registry: ${{ steps.ecr.outputs.registry }}
+      image_tag: ${{ steps.tag.outputs.short }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Shorten SHA
+        id: tag
+        run: echo "short=${GITHUB_SHA:0:8}" >> "$GITHUB_OUTPUT"
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
       - uses: aws-actions/amazon-ecr-login@v2
@@ -108,194 +41,95 @@ jobs:
         with:
           context: backend
           push: true
-          tags: ${{ steps.ecr.outputs.registry }}/orders-backend-${{ env.DEPLOY_ENV }}:${{ env.IMAGE_TAG }}
+          tags: ${{ steps.ecr.outputs.registry }}/orders-backend-orders:${{ steps.tag.outputs.short }}
           cache-from: type=gha
-          cache-to:   type=gha,mode=max
+          cache-to: type=gha,mode=max
 
       - name: Build & push frontend
         uses: docker/build-push-action@v6
         with:
           context: frontend
           push: true
-          tags: ${{ steps.ecr.outputs.registry }}/orders-frontend-${{ env.DEPLOY_ENV }}:${{ env.IMAGE_TAG }}
+          tags: ${{ steps.ecr.outputs.registry }}/orders-frontend-orders:${{ steps.tag.outputs.short }}
           cache-from: type=gha
-          cache-to:   type=gha,mode=max
+          cache-to: type=gha,mode=max
 
-  # ── 3. Terragrunt plan ────────────────────────────────────────────────────
+  # ── 2. Terraform plan ─────────────────────────────────────────────────────
   tf-plan:
-    name: Terragrunt plan
+    name: Terraform plan
     runs-on: ubuntu-latest
-    needs: [setup, build-push]
-    environment: ${{ needs.setup.outputs.deploy_env }}
+    needs: build-push
+    environment: production
     env:
-      DEPLOY_ENV: ${{ needs.setup.outputs.deploy_env }}
       AWS_REGION: us-east-1
     steps:
       - uses: actions/checkout@v4
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - uses: gruntwork-io/terragrunt-action@v2
-        with:
-          tf_version: "1.6.6"
-          tg_version: "0.67.5"
-          tg_dir: infra/live/${{ env.DEPLOY_ENV }}/us-east-1
-          tg_command: run-all plan --terragrunt-non-interactive
-
-  # ── 4. Terragrunt apply (gated by GitHub Environment protection rules) ────
-  tf-apply:
-    name: Terragrunt apply
-    runs-on: ubuntu-latest
-    needs: [setup, tf-plan]
-    # The GitHub Environment gate is what enforces:
-    #   dev  → auto (no required reviewers)
-    #   qa   → auto (no required reviewers)
-    #   prod → required reviewer approval before this job starts
-    environment: ${{ needs.setup.outputs.deploy_env }}
-    env:
-      DEPLOY_ENV: ${{ needs.setup.outputs.deploy_env }}
-      AWS_REGION: us-east-1
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - uses: gruntwork-io/terragrunt-action@v2
-        with:
-          tf_version: "1.6.6"
-          tg_version: "0.67.5"
-          tg_dir: infra/live/${{ env.DEPLOY_ENV }}/us-east-1
-          tg_command: run-all apply --terragrunt-non-interactive
-
-  # ── 5. Ansible deploy ─────────────────────────────────────────────────────
-  deploy:
-    name: Ansible deploy
-    runs-on: ubuntu-latest
-    needs: [setup, tf-apply]
-    environment: ${{ needs.setup.outputs.deploy_env }}
-    env:
-      DEPLOY_ENV: ${{ needs.setup.outputs.deploy_env }}
-      IMAGE_TAG:  ${{ needs.setup.outputs.image_tag }}
-      AWS_REGION: us-east-1
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "~1.6"
 
-      - name: Read infra outputs for Ansible
-        id: infra_outputs
-        run: |
-          TGVERSION="0.67.5"
-          curl -sL "https://github.com/gruntwork-io/terragrunt/releases/download/v${TGVERSION}/terragrunt_linux_amd64" \
-            -o /usr/local/bin/terragrunt && chmod +x /usr/local/bin/terragrunt
+      - run: terraform init -backend-config=backend.hcl
+        working-directory: infra
 
-          BASE="infra/live/${DEPLOY_ENV}/us-east-1"
+      - run: terraform plan -var="backend_image=${{ secrets.ECR_REGISTRY }}/orders-backend-orders:${{ needs.build-push.outputs.image_tag }}" -var="frontend_image=${{ secrets.ECR_REGISTRY }}/orders-frontend-orders:${{ needs.build-push.outputs.image_tag }}"
+        working-directory: infra
 
-          ALB_DNS=$(cd $BASE/alb        && terragrunt output -raw  alb_dns_name       --terragrunt-non-interactive)
-          CLUSTER=$(cd $BASE/ecs-cluster && terragrunt output -raw cluster_arn        --terragrunt-non-interactive)
-          SUBNETS=$(cd $BASE/network    && terragrunt output -json private_subnet_ids --terragrunt-non-interactive)
-          DBSG=$(cd $BASE/rds           && terragrunt output -raw  db_client_sg_id    --terragrunt-non-interactive)
-
-          echo "alb_dns=${ALB_DNS}"   >> "$GITHUB_OUTPUT"
-          echo "cluster_arn=${CLUSTER}" >> "$GITHUB_OUTPUT"
-          echo "subnets=${SUBNETS}"   >> "$GITHUB_OUTPUT"
-          echo "db_sg=${DBSG}"        >> "$GITHUB_OUTPUT"
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - run: pip install ansible boto3 botocore
-
-      - run: ansible-galaxy collection install -r requirements.yml
-        working-directory: ansible
-
-      - name: Run Ansible deploy
-        working-directory: ansible
-        run: |
-          ansible-playbook -i inventories/${{ env.DEPLOY_ENV }}/hosts.yml playbooks/deploy.yml \
-            --extra-vars "$(jq -nc \
-              --arg cluster "${{ steps.infra_outputs.outputs.cluster_arn }}" \
-              --arg alb "https://${{ steps.infra_outputs.outputs.alb_dns }}" \
-              --argjson subnets '${{ steps.infra_outputs.outputs.subnets }}' \
-              --arg dbsg "${{ steps.infra_outputs.outputs.db_sg }}" \
-              --arg tag "${{ env.IMAGE_TAG }}" \
-              '{ecs_cluster:$cluster, alb_url:$alb, db_migrate_subnets:$subnets,
-                db_migrate_security_groups:[$dbsg], image_tag:$tag}')"
-
-  # ── 6. Playwright e2e (dev only) ──────────────────────────────────────────
-  e2e:
-    name: Playwright e2e
+  # ── 3. Manual gate → Terraform apply ─────────────────────────────────────
+  tf-apply:
+    name: Terraform apply
     runs-on: ubuntu-latest
-    needs: [setup, deploy]
-    if: needs.setup.outputs.run_e2e == 'true'
-    environment: ${{ needs.setup.outputs.deploy_env }}
+    needs: [build-push, tf-plan]
+    # The GitHub Environment "production" enforces required-reviewer approval.
+    environment: production
     env:
-      DEPLOY_ENV: ${{ needs.setup.outputs.deploy_env }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - run: npm ci
-        working-directory: frontend
-
-      - run: npx playwright install --with-deps chromium
-        working-directory: frontend
-
-      - run: npx playwright test
-        working-directory: frontend
-        env:
-          PLAYWRIGHT_BASE_URL: ${{ secrets.ALB_URL }}
-          VITE_COGNITO_AUTHORITY: ${{ secrets.COGNITO_AUTHORITY }}
-          VITE_COGNITO_CLIENT_ID:  ${{ secrets.COGNITO_CLIENT_ID }}
-          E2E_VIEWER_EMAIL:        ${{ secrets.E2E_VIEWER_EMAIL }}
-          E2E_VIEWER_PASSWORD:     ${{ secrets.E2E_VIEWER_PASSWORD }}
-
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: playwright-report-${{ env.DEPLOY_ENV }}
-          path: frontend/playwright-report
-
-  # ── 7. Rollback on any downstream failure ─────────────────────────────────
-  rollback:
-    name: Rollback on failure
-    runs-on: ubuntu-latest
-    needs: [setup, deploy, e2e]
-    # Trigger when any of deploy or e2e fails (but setup/build must have succeeded)
-    if: |
-      always() &&
-      needs.setup.result == 'success' &&
-      (needs.deploy.result == 'failure' || needs.e2e.result == 'failure')
-    environment: ${{ needs.setup.outputs.deploy_env }}
-    env:
-      DEPLOY_ENV: ${{ needs.setup.outputs.deploy_env }}
       AWS_REGION: us-east-1
     steps:
       - uses: actions/checkout@v4
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.6"
+
+      - run: terraform init -backend-config=backend.hcl
+        working-directory: infra
+
+      - run: terraform apply -auto-approve -var="backend_image=${{ secrets.ECR_REGISTRY }}/orders-backend-orders:${{ needs.build-push.outputs.image_tag }}" -var="frontend_image=${{ secrets.ECR_REGISTRY }}/orders-frontend-orders:${{ needs.build-push.outputs.image_tag }}"
+        working-directory: infra
+
+  # ── 4. Ansible deploy ─────────────────────────────────────────────────────
+  deploy:
+    name: Ansible deploy
+    runs-on: ubuntu-latest
+    needs: [build-push, tf-apply]
+    environment: production
+    env:
+      IMAGE_TAG: ${{ needs.build-push.outputs.image_tag }}
+      AWS_REGION: us-east-1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.6"
 
       - uses: actions/setup-python@v5
         with:
@@ -306,5 +140,20 @@ jobs:
       - run: ansible-galaxy collection install -r requirements.yml
         working-directory: ansible
 
-      - run: ansible-playbook -i inventories/${{ env.DEPLOY_ENV }}/hosts.yml playbooks/rollback.yml
+      - name: Read Terraform outputs and run Ansible
         working-directory: ansible
+        run: |
+          terraform -chdir=../infra init -backend-config=backend.hcl
+          ALB_URL=$(terraform -chdir=../infra output -raw alb_url)
+          CLUSTER=$(terraform -chdir=../infra output -raw ecs_cluster_name)
+          SUBNETS=$(terraform -chdir=../infra output -json private_subnet_ids)
+          SG=$(terraform -chdir=../infra output -raw ecs_backend_sg_id)
+
+          ansible-playbook -i inventories/dev/hosts.yml playbooks/deploy.yml \
+            --extra-vars "$(jq -nc \
+              --arg c "$CLUSTER" \
+              --arg a "$ALB_URL" \
+              --argjson s "$SUBNETS" \
+              --arg sg "$SG" \
+              --arg t "$IMAGE_TAG" \
+              '{ecs_cluster:$c, alb_url:$a, migrate_subnets:$s, migrate_security_groups:[$sg], image_tag:$t}')"
