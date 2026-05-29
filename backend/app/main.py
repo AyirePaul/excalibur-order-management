@@ -13,7 +13,7 @@ from app.core.logging import setup_logging
 
 log = structlog.get_logger(__name__)
 
-REPORTS_DIR = Path("/reports")
+_LOCAL_REPORTS_DIR = Path("/reports")
 
 
 @asynccontextmanager
@@ -48,11 +48,21 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(orders_router, prefix="/orders")
 
+    @app.get("/api/reports/latest-url")
+    def latest_report_url():
+        from app.reporting.presign import get_latest_report_url
+
+        url = get_latest_report_url()
+        if url is None:
+            raise HTTPException(status_code=404, detail="No report available yet")
+        return {"url": url}
+
     @app.get("/api/reports/latest")
-    def latest_report():
-        if not REPORTS_DIR.exists():
+    def latest_report_file():
+        """Local dev only — streams the PDF from the mounted /reports volume."""
+        if not _LOCAL_REPORTS_DIR.exists():
             raise HTTPException(status_code=404, detail="No reports directory")
-        pdfs = sorted(REPORTS_DIR.glob("*.pdf"))
+        pdfs = sorted(_LOCAL_REPORTS_DIR.glob("*.pdf"))
         if not pdfs:
             raise HTTPException(status_code=404, detail="No report generated yet")
         return FileResponse(pdfs[-1], media_type="application/pdf")

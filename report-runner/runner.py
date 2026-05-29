@@ -1,13 +1,12 @@
 """
-Report runner: connects to RDS, runs Jasper report, uploads PDF to S3.
-Invoked by EventBridge Scheduler → ECS RunTask, or manually via `make report`.
+Report runner: connects to Postgres, runs JasperStarter against orders_by_month.jrxml,
+writes PDF to OUTPUT_DIR. Run locally via `make report`; invoke on-demand in ECS
+by running this container with the right environment variables.
 """
 
-import json
 import os
 import subprocess
 import sys
-import tempfile
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -15,19 +14,26 @@ import boto3
 
 
 def _get_db_url() -> str:
-    """Resolve DB connection from env or Secrets Manager."""
-    secret_id = os.environ.get("DB_SECRET_ARN")
-    if secret_id:
-        client = boto3.client("secretsmanager", region_name=os.environ.get("AWS_REGION", "us-east-1"))
-        secret = json.loads(client.get_secret_value(SecretId=secret_id)["SecretString"])
-        host = secret["host"]
-        port = secret.get("port", 5432)
-        user = secret["username"]
-        pw = secret["password"]
-        dbname = secret.get("dbname", "orders")
+    """Resolve DB connection as a JDBC URL for JasperStarter.
+
+    In ECS: DATABASE_URL is injected from Secrets Manager (SQLAlchemy-style URL).
+    Locally: falls back to individual POSTGRES_* environment variables.
+    """
+    from urllib.parse import urlparse
+
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
+        # Strip SQLAlchemy driver prefix, e.g. postgresql+psycopg:// → postgresql://
+        clean = database_url.replace("postgresql+psycopg", "postgresql").replace("postgresql+psycopg2", "postgresql")
+        p = urlparse(clean)
+        host = p.hostname
+        port = p.port or 5432
+        user = p.username
+        pw = p.password
+        dbname = p.path.lstrip("/").split("?")[0]
         return f"jdbc:postgresql://{host}:{port}/{dbname}?user={user}&password={pw}&ssl=true&sslmode=require"
 
-    # Local dev
+    # Local docker-compose
     host = os.environ.get("POSTGRES_HOST", "localhost")
     port = os.environ.get("POSTGRES_PORT", "5432")
     user = os.environ.get("POSTGRES_USER", "orders")

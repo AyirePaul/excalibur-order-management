@@ -1,28 +1,54 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { describe, it, expect } from "vitest";
+import { vi, describe, it, expect } from "vitest";
 import { Reports } from "../src/features/reports/Reports";
 
-function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>);
+vi.mock("../src/api/orders", () => ({
+  ordersApi: {
+    latestReportUrl: vi.fn(),
+  },
+}));
+
+async function getApi() {
+  const { ordersApi } = await import("../src/api/orders");
+  return ordersApi;
+}
+
+function renderWithProviders(ui: React.ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>{ui}</MemoryRouter>
+    </QueryClientProvider>,
+  );
 }
 
 describe("Reports", () => {
   it("renders heading", () => {
-    renderWithRouter(<Reports />);
+    renderWithProviders(<Reports />);
     expect(screen.getByRole("heading", { name: /monthly report/i })).toBeInTheDocument();
   });
 
-  it("embeds iframe pointing to backend report endpoint", () => {
-    renderWithRouter(<Reports />);
-    const iframe = screen.getByTitle(/monthly orders report/i);
-    expect(iframe).toBeInTheDocument();
-    expect(iframe).toHaveAttribute("src", "/api/reports/latest");
+  it("shows iframe when URL available", async () => {
+    const api = await getApi();
+    (api.latestReportUrl as ReturnType<typeof vi.fn>).mockResolvedValue(
+      "https://s3.example.com/2026-05-29.pdf?X-Amz-Signature=abc",
+    );
+    renderWithProviders(<Reports />);
+    await waitFor(() => {
+      expect(screen.getByTitle(/monthly orders report/i)).toBeInTheDocument();
+    });
   });
 
-  it("shows open and download links", () => {
-    renderWithRouter(<Reports />);
-    expect(screen.getByText(/open pdf in new tab/i)).toBeInTheDocument();
-    expect(screen.getByText(/download pdf/i)).toBeInTheDocument();
+  it("shows no-report message on 404", async () => {
+    const api = await getApi();
+    (api.latestReportUrl as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("404"),
+    );
+    renderWithProviders(<Reports />);
+    await waitFor(() =>
+      expect(screen.getByText(/no report available yet/i)).toBeInTheDocument(),
+    );
   });
 });

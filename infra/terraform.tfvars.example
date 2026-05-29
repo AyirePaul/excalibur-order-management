@@ -11,7 +11,8 @@ acm_certificate_arn = ""
 
 # Set after ECR repos exist (output of a first partial apply).
 # Format: <account>.dkr.ecr.us-east-1.amazonaws.com/orders-backend-orders:<tag>
-backend_image  = "orders-backend:latest"
-frontend_image = "orders-frontend:latest"
+backend_image       = "orders-backend:latest"
+frontend_image      = "orders-frontend:latest"
+report_runner_image = "orders-report-runner:latest"
 
 availability_zones = ["us-east-1a", "us-east-1b"]

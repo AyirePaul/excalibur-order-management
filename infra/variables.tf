@@ -39,3 +39,9 @@ variable "availability_zones" {
   type        = list(string)
   default     = ["us-east-1a", "us-east-1b"]
 }
+
+variable "report_runner_image" {
+  description = "Full ECR image URI for the report-runner (repo:tag)."
+  type        = string
+  default     = "orders-report-runner:latest"
+}

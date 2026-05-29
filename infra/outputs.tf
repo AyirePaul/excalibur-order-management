@@ -32,3 +32,18 @@ output "ecr_frontend_url" {
   description = "ECR repository URL for the frontend image."
   value       = module.ecr.repository_urls["frontend"]
 }
+
+output "ecr_report_runner_url" {
+  description = "ECR repository URL for the report-runner image."
+  value       = module.ecr.repository_urls["report-runner"]
+}
+
+output "reports_bucket" {
+  description = "S3 bucket name for generated report PDFs."
+  value       = aws_s3_bucket.reports.bucket
+}
+
+output "report_runner_task_def_arn" {
+  description = "ARN of the report-runner ECS task definition (for manual RunTask calls)."
+  value       = aws_ecs_task_definition.report_runner.arn
+}

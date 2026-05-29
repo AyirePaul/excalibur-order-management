@@ -54,6 +54,15 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build & push report-runner
+        uses: docker/build-push-action@v6
+        with:
+          context: report-runner
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/orders-report-runner-orders:${{ steps.tag.outputs.short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   # ── 2. Terraform plan ─────────────────────────────────────────────────────
   tf-plan:
     name: Terraform plan
@@ -78,7 +87,7 @@ jobs:
       - run: terraform init -backend-config=backend.hcl
         working-directory: infra
 
-      - run: terraform plan -var="backend_image=${{ secrets.ECR_REGISTRY }}/orders-backend-orders:${{ needs.build-push.outputs.image_tag }}" -var="frontend_image=${{ secrets.ECR_REGISTRY }}/orders-frontend-orders:${{ needs.build-push.outputs.image_tag }}"
+      - run: terraform plan -var="backend_image=${{ secrets.ECR_REGISTRY }}/orders-backend-orders:${{ needs.build-push.outputs.image_tag }}" -var="frontend_image=${{ secrets.ECR_REGISTRY }}/orders-frontend-orders:${{ needs.build-push.outputs.image_tag }}" -var="report_runner_image=${{ secrets.ECR_REGISTRY }}/orders-report-runner-orders:${{ needs.build-push.outputs.image_tag }}"
         working-directory: infra
 
   # ── 3. Manual gate → Terraform apply ─────────────────────────────────────
@@ -106,7 +115,7 @@ jobs:
       - run: terraform init -backend-config=backend.hcl
         working-directory: infra
 
-      - run: terraform apply -auto-approve -var="backend_image=${{ secrets.ECR_REGISTRY }}/orders-backend-orders:${{ needs.build-push.outputs.image_tag }}" -var="frontend_image=${{ secrets.ECR_REGISTRY }}/orders-frontend-orders:${{ needs.build-push.outputs.image_tag }}"
+      - run: terraform apply -auto-approve -var="backend_image=${{ secrets.ECR_REGISTRY }}/orders-backend-orders:${{ needs.build-push.outputs.image_tag }}" -var="frontend_image=${{ secrets.ECR_REGISTRY }}/orders-frontend-orders:${{ needs.build-push.outputs.image_tag }}" -var="report_runner_image=${{ secrets.ECR_REGISTRY }}/orders-report-runner-orders:${{ needs.build-push.outputs.image_tag }}"
         working-directory: infra
 
   # ── 4. Ansible deploy ─────────────────────────────────────────────────────

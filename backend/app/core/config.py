@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
     enable_docs: bool = True
 
+    # AWS / Reports
+    aws_region: str = "us-east-1"
+    reports_bucket: str = ""
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
