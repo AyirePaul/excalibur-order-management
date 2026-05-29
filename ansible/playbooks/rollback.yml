@@ -1,0 +1,56 @@
+---
+# Rollback: revert ECS service to the previous task definition revision.
+- name: Rollback Order Management application
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: Get current service info
+      amazon.aws.ecs_service_info:
+        cluster: "{{ ecs_cluster }}"
+        service: "{{ ecs_service_backend }}"
+        region: "{{ aws_region }}"
+        details: true
+      register: current_svc
+
+    - name: Determine current task definition revision
+      set_fact:
+        current_arn: "{{ current_svc.services[0].taskDefinition }}"
+        current_rev: "{{ current_svc.services[0].taskDefinition.split(':')[-1] | int }}"
+
+    - name: Fail if already at revision 1 (cannot roll back further)
+      fail:
+        msg: "Already at revision 1 — cannot roll back"
+      when: current_rev | int <= 1
+
+    - name: Compute previous revision ARN
+      set_fact:
+        previous_arn: "{{ current_arn | regex_replace(':' + current_rev, ':' + ((current_rev | int) - 1) | string) }}"
+
+    - name: Update ECS service to previous task definition
+      amazon.aws.ecs_service:
+        name: "{{ ecs_service_backend }}"
+        cluster: "{{ ecs_cluster }}"
+        task_definition: "{{ previous_arn }}"
+        force_new_deployment: true
+        region: "{{ aws_region }}"
+        state: present
+
+    - name: Wait for rollback to stabilize
+      amazon.aws.ecs_service_info:
+        cluster: "{{ ecs_cluster }}"
+        service: "{{ ecs_service_backend }}"
+        region: "{{ aws_region }}"
+        details: true
+      register: svc_info
+      until: svc_info.services[0].runningCount == svc_info.services[0].desiredCount
+      retries: 30
+      delay: 10
+
+    - name: Run healthcheck after rollback
+      include_role:
+        name: healthcheck
+
+    - name: Rollback complete
+      debug:
+        msg: "Rolled back from {{ current_arn }} to {{ previous_arn }}"

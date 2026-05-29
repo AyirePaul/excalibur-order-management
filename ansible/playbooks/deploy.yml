@@ -1,0 +1,27 @@
+---
+# Idempotent deploy playbook: db-migrate → app-deploy → healthcheck
+# Re-running with the same IMAGE_TAG reports changed=0.
+- name: Deploy Order Management application
+  hosts: all
+  gather_facts: false
+
+  vars:
+    image_tag: "{{ lookup('env', 'IMAGE_TAG') | default('latest', true) }}"
+
+  pre_tasks:
+    - name: Validate required variables
+      assert:
+        that:
+          - env is defined
+          - aws_region is defined
+        fail_msg: "env and aws_region must be set (via inventory or extra-vars)"
+
+  roles:
+    - role: db-migrate
+    - role: app-deploy
+    - role: healthcheck
+
+  post_tasks:
+    - name: Deployment complete
+      debug:
+        msg: "Deployed image tag '{{ image_tag }}' to {{ env }} successfully"

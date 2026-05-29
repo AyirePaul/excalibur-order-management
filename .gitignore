@@ -1,0 +1,62 @@
+# --- secrets / env ---
+.env
+.env.*
+!.env.example
+*.tfvars
+!*.tfvars.example
+**/secrets/*
+!**/secrets/.gitkeep
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node ---
+node_modules/
+dist/
+build/
+.vite/
+coverage/
+.eslintcache
+*.tsbuildinfo
+
+# --- Terraform / Terragrunt ---
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+.terragrunt-cache/
+
+# --- Ansible ---
+*.retry
+ansible/group_vars/*/vault.yml.dec
+
+# --- Docker ---
+*.log
+
+# --- IDE / OS ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# --- Playwright ---
+frontend/e2e/.auth/
+frontend/playwright-report/
+frontend/test-results/
+
+# --- Reports / artifacts ---
+out/
+*.pdf
+!docs/**/*.pdf
+!report-runner/**/*.pdf

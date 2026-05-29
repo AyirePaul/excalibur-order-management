@@ -1,0 +1,4 @@
+---
+image_tag: "{{ lookup('env', 'IMAGE_TAG') | default('latest', true) }}"
+ecs_service_backend: "orders-backend-qa"
+ecs_service_frontend: "orders-frontend-qa"

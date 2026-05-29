@@ -1,0 +1,21 @@
+# Default owner for everything not matched below
+*                       @ORG/order-management-maintainers
+
+# Backend
+/backend/                @ORG/backend
+/backend/app/api/        @ORG/backend @ORG/api-reviewers
+
+# Frontend
+/frontend/               @ORG/frontend
+/frontend/e2e/           @ORG/frontend @ORG/qa
+
+# Infrastructure
+/infra/                  @ORG/platform
+/ansible/                @ORG/platform
+/observability/          @ORG/platform @ORG/sre
+
+# CI/CD
+/.github/                @ORG/platform
+
+# Reports
+/report-runner/          @ORG/backend @ORG/data

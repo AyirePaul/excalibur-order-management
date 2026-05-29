@@ -1,0 +1,8 @@
+---
+# alb_url and db_migrate_* must be supplied at deploy time via --extra-vars
+# (sourced from Terragrunt outputs in the CD pipeline).
+# The placeholder below is a last-resort fallback only — CI always overrides it.
+alb_url: "https://{{ env }}.orders.example.com"
+# validate_ssl: false because the raw ALB DNS name won't match the ACM cert domain.
+# Override to true when passing a real domain name via ALB_URL in CI secrets.
+validate_ssl: false

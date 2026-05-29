@@ -1,0 +1,9 @@
+---
+project: order-management
+ecs_cluster: "orders-{{ env }}"
+# ECR registry is derived at runtime via amazon.aws.aws_caller_info, not a static lookup.
+# Use this in tasks: "{{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com"
+# where aws_account_id is set from the aws_caller_info register output.
+healthcheck_path: /healthz
+healthcheck_retries: 20
+healthcheck_delay: 10

@@ -1,0 +1,35 @@
+---
+# Run Alembic migrations via a one-shot Fargate task.
+# Idempotent: Alembic is a no-op when already at head.
+
+- name: Get current task definition
+  amazon.aws.ecs_task_definition_info:
+    task_definition: "orders-backend-{{ env }}"
+    region: "{{ aws_region }}"
+  register: task_def
+
+- name: Run Alembic upgrade via ECS RunTask
+  amazon.aws.ecs_task:
+    cluster: "{{ ecs_cluster }}"
+    task_definition: "{{ task_def.task_definition.taskDefinitionArn }}"
+    launch_type: FARGATE
+    overrides:
+      containerOverrides:
+        - name: backend
+          command: ["alembic", "upgrade", "head"]
+    network_configuration:
+      awsvpcConfiguration:
+        subnets: "{{ db_migrate_subnets | default([]) }}"
+        securityGroups: "{{ db_migrate_security_groups | default([]) }}"
+        assignPublicIp: "DISABLED"
+    region: "{{ aws_region }}"
+    wait: true
+    wait_timeout: 300
+  register: migrate_task
+
+- name: Assert migration succeeded
+  assert:
+    that:
+      - migrate_task.tasks[0].containers[0].exitCode == 0
+    fail_msg: "Alembic migration failed. Check ECS logs."
+    success_msg: "Migrations applied successfully."
