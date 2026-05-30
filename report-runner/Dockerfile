@@ -3,7 +3,7 @@ FROM eclipse-temurin:17-jre-alpine AS base
 WORKDIR /app
 
 RUN apk add --no-cache python3 py3-pip curl unzip && \
-    pip3 install --no-cache-dir --break-system-packages psycopg[binary]
+    pip3 install --no-cache-dir --break-system-packages boto3 psycopg[binary]
 
 # Install jasperstarter
 RUN curl -fsSL "https://sourceforge.net/projects/jasperstarter/files/JasperStarter-3.6/jasperstarter-3.6.2-bin.zip/download" \

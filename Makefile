@@ -1,4 +1,4 @@
-.PHONY: help up down restart logs migrate seed test test-backend test-frontend lint fmt build clean report tf-bootstrap tf-init tf-plan tf-apply tf-destroy ansible-deploy
+.PHONY: help up down restart logs migrate seed test test-backend test-frontend lint fmt build clean report report-aws tf-bootstrap tf-init tf-plan tf-apply tf-destroy ansible-deploy
 
 help:
 	@echo "Local dev:"
@@ -10,7 +10,8 @@ help:
 	@echo "  make test             # unit + integration (backend + frontend)"
 	@echo "  make lint             # pre-commit run --all-files"
 	@echo "  make fmt              # ruff/black/prettier/terraform fmt"
-	@echo "  make report           # run JasperReport runner (writes PDF to ./out/)"
+	@echo "  make report           # run JasperReport runner locally (writes PDF to ./out/)"
+	@echo "  make report-aws       # trigger report-runner ECS task in AWS (uploads PDF to S3)"
 	@echo ""
 	@echo "Infra (single environment, plain Terraform):"
 	@echo "  make tf-bootstrap     # one-time: create state bucket + lock table, generate infra/backend.hcl"
@@ -121,3 +122,16 @@ tf-destroy:
 
 ansible-deploy:
 	cd ansible && ansible-playbook -i inventories/dev/hosts.yml playbooks/deploy.yml
+
+report-aws:
+	@CLUSTER=$$(terraform -chdir=infra output -raw ecs_cluster_name) && \
+	TASK_DEF=$$(terraform -chdir=infra output -raw report_runner_task_def_arn) && \
+	SUBNETS=$$(terraform -chdir=infra output -json private_subnet_ids | jq -r 'join(",")') && \
+	SG=$$(terraform -chdir=infra output -raw db_client_sg_id) && \
+	echo "→ Triggering report-runner on cluster $$CLUSTER" && \
+	aws ecs run-task \
+	  --cluster "$$CLUSTER" \
+	  --task-definition "$$TASK_DEF" \
+	  --launch-type FARGATE \
+	  --network-configuration "awsvpcConfiguration={subnets=[$$SUBNETS],securityGroups=[$$SG],assignPublicIp=DISABLED}" \
+	  --query "tasks[0].taskArn" --output text

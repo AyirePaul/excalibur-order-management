@@ -10,20 +10,20 @@ This repo delivers **Tier 3** of the Excalibur assignment. Tier 4 features (Grap
 
 | Feature | Where |
 |---|---|
-| 3-table schema (order_date, order_detail, order_combined) + Alembic migration + seed | `backend/app/db/migrations/` + `db/seed.sql` |
+| 3-table schema + Alembic migration + seed data | `backend/app/db/migrations/` + `db/seed.sql` |
 | REST CRUD + `/orders/combine` + `/orders/export.csv` | `backend/app/api/rest/orders.py` |
 | OpenAPI at `/docs`, `/redoc`, `/openapi.json` | FastAPI auto-generated |
 | Strict DTO layer (Pydantic, never expose ORM models) | `backend/app/schemas/orders.py` |
 | React Router with ≥3 lazy routes (list/create/edit/combine/reports) | `frontend/src/router.tsx` |
 | Tab-Card toggle on orders list | `frontend/src/features/orders-list/OrdersList.tsx` |
-| JasperReport — daily cron + on-demand, PDF stored in S3, embedded via presigned URL | `report-runner/` + `infra/main.tf` + `frontend/src/features/reports/Reports.tsx` |
+| JasperReport — daily cron + on-demand, S3 storage, presigned URL iframe | `report-runner/` + `infra/main.tf` + `frontend/src/features/reports/` |
 | Docker Compose local stack | `docker-compose.yml` |
-| Terraform (single env, plain `terraform`, S3+DynamoDB remote state) | `infra/` |
-| Ansible single playbook (migrate → deploy backend+frontend → healthcheck) | `ansible/playbooks/deploy.yml` |
+| Terraform (single env, S3+DynamoDB remote state) | `infra/` |
+| Ansible single playbook (migrate → deploy → healthcheck) | `ansible/playbooks/deploy.yml` |
 | CI: lint + test + coverage + tf validate | `.github/workflows/ci.yml` |
 | CD: 3 parallel builds → tf plan → manual gate → tf apply → ansible | `.github/workflows/cd.yml` |
 | Structured JSON logging + `/healthz` + `/readyz` | `backend/app/core/logging.py` + `backend/app/api/rest/health.py` |
-| Unit + integration tests ≥60% backend coverage | `backend/tests/` (87% actual) |
+| Backend unit + integration tests ≥60% coverage | `backend/tests/` (87% actual) |
 | Frontend Vitest tests | `frontend/tests/` |
 | Architecture diagram | `docs/architecture.svg` |
 
@@ -33,33 +33,38 @@ At Tier 3 the API is open. Any user can read and mutate orders. The Combine and 
 
 ---
 
-## Report embedding
+## Report pipeline
 
-**Local dev:**
-```bash
-make report    # runs report-runner container, writes PDF to ./out/
-# Visit: http://localhost:8000/api/reports/latest
 ```
-The backend mounts `./out` at `/reports` and streams the latest PDF. `GET /api/reports/latest-url` returns `{ url: "/api/reports/latest" }` when no S3 bucket is configured.
+report-runner (Fargate one-shot)
+  → JasperStarter queries order_combined
+  → PDF → s3://orders-reports-<account>/YYYY-MM-DD.pdf
 
-**Production (ECS):**
-- EventBridge rule runs `report-runner` as a one-shot Fargate task daily at 06:00 UTC
-- Report-runner queries `order_combined`, runs JasperStarter, uploads PDF to `s3://orders-reports-<account>/YYYY-MM-DD.pdf`
-- `GET /api/reports/latest-url` generates a 1-hour S3 presigned URL
-- Frontend fetches the URL via React Query and embeds it in an `<iframe>`
-- To trigger on-demand: run the report-runner ECS task manually (ARN in `report_runner_task_def_arn` output)
+Frontend /reports
+  → GET /api/reports/latest-url
+        production: S3 presigned GET URL (1h TTL)
+        local dev:  /api/reports/latest (served from ./out/ volume mount)
+  → <iframe src={url} />
+```
+
+**Trigger options:**
+
+| Where | Command |
+|---|---|
+| Local dev | `make report` — runs report-runner container, writes to `./out/` |
+| AWS on-demand | `make report-aws` — runs ECS RunTask, uploads to S3 |
+| AWS scheduled | EventBridge rule fires daily at 06:00 UTC automatically |
 
 ---
 
 ## Local quickstart
 
 ```bash
-cp .env.example .env           # no edits needed for local dev
+cp .env.example .env           # no edits needed
 
-docker compose up -d --build   # postgres + backend (port 8000) + frontend (port 5173)
-make seed                      # runs migrations then loads 30 seed rows
+docker compose up -d --build   # postgres + backend (8000) + frontend (5173)
+make seed                      # migrations + 30 seed rows
 
-# Verify
 curl http://localhost:8000/healthz
 curl -s -X POST http://localhost:8000/orders/combine \
   -H 'Content-Type: application/json' \
@@ -68,7 +73,7 @@ curl -s -X POST http://localhost:8000/orders/combine \
 make test-backend              # requires: uv
 make test-frontend             # requires: node/npm
 
-make report                    # generate report → open http://localhost:8000/api/reports/latest
+make report                    # generate report → http://localhost:8000/api/reports/latest
 ```
 
 ---
@@ -77,13 +82,13 @@ make report                    # generate report → open http://localhost:8000/
 
 ### Step 1: Bootstrap Terraform state (once only)
 
-The S3 bucket name is account-scoped for global uniqueness. `infra/backend.hcl` is **committed** to the repo — no account-ID secret needed in GitHub Actions.
+The state bucket name is account-scoped. `infra/backend.hcl` is **committed** to the repo so CI reads it directly.
 
 ```bash
 make tf-bootstrap
 # → creates  s3://orders-tf-state-<account-id>  (versioned)
 # → creates  dynamodb/orders-tf-locks
-# → writes   infra/backend.hcl   ← commit this file
+# → writes   infra/backend.hcl
 git add infra/backend.hcl && git commit -m "chore: add terraform backend config"
 ```
 
@@ -93,13 +98,13 @@ git add infra/backend.hcl && git commit -m "chore: add terraform backend config"
 make tf-init   # terraform init -backend-config=backend.hcl
 
 cp infra/terraform.tfvars.example infra/terraform.tfvars
-# Edit: set acm_certificate_arn if you have a cert (leave "" for HTTP-only)
+# Set acm_certificate_arn if you have a cert (leave "" for HTTP-only)
 
 make tf-plan
 make tf-apply
 ```
 
-Key outputs: `alb_url`, `ecs_cluster_name`, `db_client_sg_id`, `private_subnet_ids`, `backend_task_def_family`, `frontend_task_def_family`, `backend_service_name`, `frontend_service_name`, `ecr_backend_url`, `ecr_frontend_url`, `ecr_report_runner_url`, `reports_bucket`.
+Key outputs: `alb_url`, `ecs_cluster_name`, `db_client_sg_id`, `private_subnet_ids`, `ecr_backend_url`, `ecr_frontend_url`, `ecr_report_runner_url`, `reports_bucket`, `report_runner_task_def_arn`.
 
 ### Step 3: Build and push images
 
@@ -107,19 +112,19 @@ Key outputs: `alb_url`, `ecs_cluster_name`, `db_client_sg_id`, `private_subnet_i
 ECR=$(terraform -chdir=infra output -raw ecr_backend_url | cut -d'/' -f1)
 aws ecr get-login-password | docker login --username AWS --password-stdin $ECR
 
-docker build -t $(terraform -chdir=infra output -raw ecr_backend_url):latest backend && \
-  docker push $(terraform -chdir=infra output -raw ecr_backend_url):latest
+docker build -t $(terraform -chdir=infra output -raw ecr_backend_url):latest backend
+docker push $(terraform -chdir=infra output -raw ecr_backend_url):latest
 
-docker build -t $(terraform -chdir=infra output -raw ecr_frontend_url):latest frontend && \
-  docker push $(terraform -chdir=infra output -raw ecr_frontend_url):latest
+docker build -t $(terraform -chdir=infra output -raw ecr_frontend_url):latest frontend
+docker push $(terraform -chdir=infra output -raw ecr_frontend_url):latest
 
-docker build -t $(terraform -chdir=infra output -raw ecr_report_runner_url):latest report-runner && \
-  docker push $(terraform -chdir=infra output -raw ecr_report_runner_url):latest
+docker build -t $(terraform -chdir=infra output -raw ecr_report_runner_url):latest report-runner
+docker push $(terraform -chdir=infra output -raw ecr_report_runner_url):latest
 ```
 
 ### Step 4: Run Ansible deploy
 
-Service names, task definition families, and migration task are all derived from `ecs_cluster` inside the playbook — only four values need to be passed:
+Service names and task definition families are derived from `ecs_cluster` inside the playbook — only four values needed:
 
 ```bash
 ALB_URL=$(terraform -chdir=infra output -raw alb_url)
@@ -145,11 +150,11 @@ Set these secrets under the `production` GitHub Environment:
 
 | Secret | Value |
 |---|---|
-| `AWS_ACCESS_KEY_ID` | IAM user access key (ECR push + ECS + Terraform + S3 + Secrets Manager) |
+| `AWS_ACCESS_KEY_ID` | IAM user access key (ECR + ECS + Terraform + S3 + Secrets Manager) |
 | `AWS_SECRET_ACCESS_KEY` | Corresponding secret |
 | `ECR_REGISTRY` | `<account>.dkr.ecr.us-east-1.amazonaws.com` |
 
-Push to `main` triggers: parallel builds (backend + frontend + report-runner) → `terraform plan` → manual reviewer gate → `terraform apply` → Ansible deploy.
+Push to `main` triggers: 3 parallel Docker builds (composite action at `.github/actions/build-push/`) → `terraform plan` → manual reviewer gate → `terraform apply` → Ansible deploy.
 
 ---
 
@@ -160,7 +165,7 @@ All checks run on 2026-05-30.
 | Check | Result |
 |---|---|
 | `terraform fmt -recursive -check infra/` | ✅ PASS |
-| `terraform init -backend=false && terraform validate` (infra/) | ✅ PASS (clean) |
+| `terraform init -backend=false && terraform validate` | ✅ PASS (clean) |
 | `uv run --extra dev ruff check .` (backend) | ✅ PASS |
 | `uv run --extra dev pytest -q --cov=app` (backend) | ✅ PASS — 38 passed, 87% coverage |
 | `npm ci && npm run lint && npm run build && npm run test` (frontend) | ✅ PASS — 13 passed |
@@ -172,13 +177,13 @@ All checks run on 2026-05-30.
 
 ## Infrastructure notes
 
-**RDS connection:** SSL disabled (`sslmode=disable`, `rds.force_ssl=0`) — traffic stays within the VPC private subnet. Connection pool: `pool_size=3, max_overflow=2` (safe for `db.t4g.micro` with ~22 `max_connections` during rolling deploy).
+**RDS:** SSL disabled (`sslmode=disable`, `rds.force_ssl=0`) — all traffic stays within the VPC private subnet. Connection pool: `pool_size=3, max_overflow=2, pool_recycle=1800` (safe for `db.t4g.micro` ~22 `max_connections` during rolling deploy).
 
-**Security groups:** The migration ECS RunTask and report-runner attach `db_client_sg_id`. The backend ECS service attaches both its own SG and `db_client_sg_id` via `additional_sg_ids`. The RDS SG only allows port 5432 ingress from `db_client_sg`.
+**Security groups:** Migration RunTask and report-runner attach `db_client_sg_id`. Backend attaches both its own SG and `db_client_sg_id` via `additional_sg_ids`. RDS SG allows port 5432 ingress only from `db_client_sg`. `db_client_sg` has explicit egress: 5432 (RDS) + 443 (S3 via NAT).
 
-**Report pipeline:** `report-runner` → S3 bucket `orders-reports-<account>` → backend presigns URL → frontend iframe. S3 CORS allows the ALB origin. Reports expire after 30 days (lifecycle rule). EventBridge triggers daily at 06:00 UTC.
+**Report S3 bucket:** `orders-reports-<account-id>`, CORS allows the ALB origin, 30-day lifecycle expiry.
 
-**CD parallelism:** Three Docker builds run in parallel (composite action at `.github/actions/build-push/`), converging at `terraform plan`.
+**CD builds:** Composite action at `.github/actions/build-push/action.yml` — ECR auth + buildx + push, cache scoped per service. Three builds run in parallel, converge at `terraform plan`.
 
 ---
 
@@ -186,13 +191,13 @@ All checks run on 2026-05-30.
 
 - **GraphQL** (`backend/app/api/graphql/`, Strawberry, `python-jose`, `/graphql` route)
 - **Cognito auth** (`backend/app/core/security.py`, all `Depends(require_*)` on routes, `frontend/src/auth/`)
-- **OpenTelemetry** (`backend/app/core/telemetry.py`, ADOT sidecar in ECS task, all `opentelemetry-*` deps)
-- **Terragrunt + multi-env** (`infra/live/` tree with root.hcl, `_envcommon/`, dev/qa/prod configs)
+- **OpenTelemetry** (`backend/app/core/telemetry.py`, ADOT sidecar, all `opentelemetry-*` deps)
+- **Terragrunt + multi-env** (`infra/live/` tree, `_envcommon/`, dev/qa/prod configs)
 - **KMS CMK** (replaced with default AWS-managed encryption)
 - **Observability module** + CloudWatch dashboards + alarms
 - **Playwright e2e** (`frontend/e2e/`, `playwright.config.ts`, `@playwright/test` dep)
 - **Blue-green rollback** (`ansible/playbooks/rollback.yml`, rollback CI job)
-- **Ansible roles + Vault** (`ansible/roles/`, `group_vars/{dev,qa,prod}/vault.yml`)
+- **Ansible roles + Vault** (`ansible/roles/`, per-env vault files)
 - **Multi-env CI/CD** (tags→qa promotion, rollback job, e2e job)
 - **CODEOWNERS**, `docs/runbooks/`
 - **KMS, Cognito, GitHub OIDC Terraform modules**
