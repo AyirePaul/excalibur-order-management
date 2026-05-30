@@ -20,8 +20,12 @@ def get_engine():
         _engine = create_engine(
             settings.database_url,
             pool_pre_ping=True,
-            pool_size=10,
-            max_overflow=5,
+            # Conservative pool for db.t4g.micro (~22 max_connections).
+            # Two tasks can overlap briefly during rolling deploy, so keep
+            # total well under the instance limit with headroom for admin.
+            pool_size=3,
+            max_overflow=2,
+            pool_recycle=1800,
         )
     return _engine
 

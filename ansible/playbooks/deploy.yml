@@ -2,6 +2,10 @@
 # Single-play deploy: migrate → force-deploy backend + frontend → healthcheck.
 # Idempotent: re-running with the same image_tag reports changed=0.
 # Variables come from CI --extra-vars; fallback defaults allow local testing.
+#
+# Derived names (all follow the same prefix as the cluster):
+#   backend service / task def  →  {{ ecs_cluster }}-backend
+#   frontend service / task def →  {{ ecs_cluster }}-frontend
 - name: Deploy Order Management
   hosts: localhost
   connection: local
@@ -12,49 +16,45 @@
     alb_url: "http://localhost:8000"
     migrate_subnets: []
     migrate_security_groups: []
-    migrate_task_definition: ""
     image_tag: "latest"
 
   tasks:
-    - name: Run DB migrations via ECS RunTask
-      community.aws.ecs_task:
-        operation: run
-        cluster: "{{ ecs_cluster }}"
-        task_definition: "{{ migrate_task_definition }}"
-        launch_type: FARGATE
-        count: 1
-        started_by: "ansible-deploy"
-        network_configuration:
-          subnets: "{{ migrate_subnets }}"
-          security_groups: "{{ migrate_security_groups }}"
-          assign_public_ip: false
-        overrides:
-          containerOverrides:
-            - name: backend
-              command: ["alembic", "upgrade", "head"]
-        wait: true
-      register: migrate_task
-      when: migrate_subnets | length > 0 and migrate_task_definition != ""
-
-    - name: Assert migration succeeded
-      ansible.builtin.assert:
-        that:
-          - migrate_task.tasks[0].containers[0].exitCode == 0
-        fail_msg: "Migration task exited with non-zero code"
-      when: migrate_subnets | length > 0 and migrate_task_definition != ""
+    - name: Run DB migrations via ECS RunTask (AWS CLI)
+      ansible.builtin.shell: |
+        set -e
+        TASK_ARN=$(aws ecs run-task \
+          --cluster "{{ ecs_cluster }}" \
+          --task-definition "{{ ecs_cluster }}-backend" \
+          --launch-type FARGATE \
+          --count 1 \
+          --started-by "ansible-deploy" \
+          --network-configuration "awsvpcConfiguration={subnets=[{{ migrate_subnets | join(',') }}],securityGroups=[{{ migrate_security_groups | join(',') }}],assignPublicIp=DISABLED}" \
+          --overrides '{"containerOverrides":[{"name":"backend","command":["alembic","upgrade","head"]}]}' \
+          --query "tasks[0].taskArn" --output text)
+        echo "Migration task: $TASK_ARN"
+        aws ecs wait tasks-stopped --cluster "{{ ecs_cluster }}" --tasks "$TASK_ARN"
+        EXIT=$(aws ecs describe-tasks \
+          --cluster "{{ ecs_cluster }}" \
+          --tasks "$TASK_ARN" \
+          --query "tasks[0].containers[0].exitCode" --output text)
+        echo "Exit code: $EXIT"
+        [ "$EXIT" = "0" ] || { echo "Migration failed with exit code $EXIT"; exit 1; }
+      when: migrate_subnets | length > 0
 
     - name: Force new deployment of backend
       community.aws.ecs_service:
         state: present
         cluster: "{{ ecs_cluster }}"
-        name: "{{ ecs_cluster }}-orders-backend"
+        name: "{{ ecs_cluster }}-backend"
+        task_definition: "{{ ecs_cluster }}-backend"
         force_new_deployment: true
 
     - name: Force new deployment of frontend
       community.aws.ecs_service:
         state: present
         cluster: "{{ ecs_cluster }}"
-        name: "{{ ecs_cluster }}-orders-frontend"
+        name: "{{ ecs_cluster }}-frontend"
+        task_definition: "{{ ecs_cluster }}-frontend"
         force_new_deployment: true
 
     - name: Healthcheck — wait for /healthz to return 200

@@ -157,8 +157,7 @@ jobs:
           ALB_URL=$(terraform -chdir=../infra output -raw alb_url)
           CLUSTER=$(terraform -chdir=../infra output -raw ecs_cluster_name)
           SUBNETS=$(terraform -chdir=../infra output -json private_subnet_ids)
-          SG=$(terraform -chdir=../infra output -raw ecs_backend_sg_id)
-          TASK_DEF=$(terraform -chdir=../infra output -raw backend_task_def_arn)
+          SG=$(terraform -chdir=../infra output -raw db_client_sg_id)
 
           ansible-playbook -i inventories/dev/hosts.yml playbooks/deploy.yml \
             --extra-vars "$(jq -nc \
@@ -167,5 +166,4 @@ jobs:
               --argjson s "$SUBNETS" \
               --arg sg "$SG" \
               --arg t "$IMAGE_TAG" \
-              --arg td "$TASK_DEF" \
-              '{ecs_cluster:$c, alb_url:$a, migrate_subnets:$s, migrate_security_groups:[$sg], image_tag:$t, migrate_task_definition:$td}')"
+              '{ecs_cluster:$c, alb_url:$a, migrate_subnets:$s, migrate_security_groups:[$sg], image_tag:$t}')"

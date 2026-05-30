@@ -19,12 +19,17 @@ output "private_subnet_ids" {
 }
 
 output "ecs_backend_sg_id" {
-  description = "ECS backend task security group ID (passed to Ansible for migration task)."
+  description = "ECS backend task own security group ID."
   value       = module.backend.ecs_sg_id
 }
 
+output "db_client_sg_id" {
+  description = "DB-client security group ID — attach to any task that needs Postgres access. Used for migration RunTask."
+  value       = module.rds.db_client_sg_id
+}
+
 output "backend_task_def_arn" {
-  description = "Backend ECS task definition ARN (passed to Ansible for the migration RunTask)."
+  description = "Backend ECS task definition ARN (for reference)."
   value       = module.backend.task_def_arn
 }
 

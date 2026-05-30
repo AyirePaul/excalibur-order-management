@@ -18,7 +18,24 @@ resource "aws_security_group" "db_client" {
   name        = "${var.env}-orders-db-client"
   description = "Attach to ECS tasks that need Postgres access"
   vpc_id      = var.vpc_id
-  tags        = merge(var.tags, { Name = "${var.env}-orders-db-client-sg" })
+
+  egress {
+    description = "Postgres to RDS"
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "HTTPS for S3 and AWS APIs via NAT"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(var.tags, { Name = "${var.env}-orders-db-client-sg" })
 }
 
 resource "aws_security_group" "rds" {
@@ -59,7 +76,7 @@ resource "aws_secretsmanager_secret" "db_url" {
 
 resource "aws_secretsmanager_secret_version" "db_url" {
   secret_id     = aws_secretsmanager_secret.db_url.id
-  secret_string = "postgresql+psycopg://${var.db_username}:${random_password.db.result}@${aws_db_instance.main.address}:5432/${var.db_name}?sslmode=require"
+  secret_string = "postgresql+psycopg://${var.db_username}:${random_password.db.result}@${aws_db_instance.main.address}:5432/${var.db_name}?sslmode=disable"
 }
 
 resource "aws_db_instance" "main" {
@@ -90,7 +107,7 @@ resource "aws_db_parameter_group" "main" {
 
   parameter {
     name  = "rds.force_ssl"
-    value = "1"
+    value = "0"
   }
 
   tags = var.tags
