@@ -121,13 +121,28 @@ resource "aws_lb_listener" "https" {
   }
 }
 
-# API routing rule: backend paths on whichever listener is active.
+# API + health routing rule.
 resource "aws_lb_listener_rule" "api" {
   listener_arn = local.active_listener_arn
   priority     = 10
 
   condition {
-    path_pattern { values = ["/orders*", "/healthz", "/readyz", "/docs*", "/redoc*", "/openapi.json", "/api/*"] }
+    path_pattern { values = ["/orders*", "/api/*", "/healthz", "/readyz", "/docs*"] }
+  }
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.backend.arn
+  }
+}
+
+# Docs routing rule (split out to stay within the 5-value path condition limit).
+resource "aws_lb_listener_rule" "docs" {
+  listener_arn = local.active_listener_arn
+  priority     = 11
+
+  condition {
+    path_pattern { values = ["/redoc*", "/openapi.json"] }
   }
 
   action {
