@@ -31,7 +31,7 @@ def _get_db_url() -> str:
         user = p.username
         pw = p.password
         dbname = p.path.lstrip("/").split("?")[0]
-        return f"jdbc:postgresql://{host}:{port}/{dbname}?user={user}&password={pw}&ssl=true&sslmode=require"
+        return f"jdbc:postgresql://{host}:{port}/{dbname}?user={user}&password={pw}&ssl=false"
 
     # Local docker-compose
     host = os.environ.get("POSTGRES_HOST", "localhost")
@@ -39,7 +39,7 @@ def _get_db_url() -> str:
     user = os.environ.get("POSTGRES_USER", "orders")
     pw = os.environ.get("POSTGRES_PASSWORD", "orders")
     dbname = os.environ.get("POSTGRES_DB", "orders")
-    return f"jdbc:postgresql://{host}:{port}/{dbname}?user={user}&password={pw}"
+    return f"jdbc:postgresql://{host}:{port}/{dbname}?user={user}&password={pw}&ssl=false"
 
 
 def run_report(output_path: Path) -> None:

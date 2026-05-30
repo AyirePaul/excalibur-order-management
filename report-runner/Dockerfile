@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM eclipse-temurin:17-jre-alpine AS base
+FROM eclipse-temurin:8-jre-alpine AS base
 WORKDIR /app
 
 RUN apk add --no-cache python3 py3-pip curl unzip && \

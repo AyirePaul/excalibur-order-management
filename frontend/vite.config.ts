@@ -14,6 +14,22 @@ export default defineConfig({
         target: process.env.VITE_API_BASE_URL ?? "http://localhost:8000",
         changeOrigin: true,
       },
+      "/docs": {
+        target: process.env.VITE_API_BASE_URL ?? "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/redoc": {
+        target: process.env.VITE_API_BASE_URL ?? "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/openapi.json": {
+        target: process.env.VITE_API_BASE_URL ?? "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/healthz": {
+        target: process.env.VITE_API_BASE_URL ?? "http://localhost:8000",
+        changeOrigin: true,
+      },
     },
   },
   test: {
