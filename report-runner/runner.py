@@ -58,6 +58,7 @@ def run_report(output_path: Path) -> None:
         "-f", "pdf",
         "-t", "generic",
         "--db-url", db_url,
+        "--db-driver", "org.postgresql.Driver",
         "-P",
         f"P_DATE_FROM={date_from}",
         f"P_DATE_TO={date_to.isoformat()}",
